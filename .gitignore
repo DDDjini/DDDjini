@@ -1,0 +1,22 @@
+# 敏感文件
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE / 工具
+.workbuddy/
+.vscode/
+.idea/
+
+# 缓存/日志
+results/
+*.jsonl
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

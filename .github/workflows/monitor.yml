@@ -1,0 +1,24 @@
+name: OKX Monitor
+on:
+  schedule:
+    - cron: "1,31 * * * *"
+  workflow_dispatch:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas numpy ccxt python-dotenv requests
+      - uses: actions/cache@v4
+        with:
+          path: data/
+          key: kline-data-v1-${{ github.ref_name }}
+          restore-keys: kline-data-v1-
+      - name: Run scan
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        run: python monitor.py --once
