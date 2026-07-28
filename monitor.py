@@ -208,16 +208,13 @@ def run_once():
                 color="yellow",
             )
     else:
-        # 每 6 小时发一次心跳（可选，避免太频繁）
-        now = datetime.now(timezone.utc)
-        if now.hour % 6 == 0 and now.minute < 30:
-            feishu_send(
-                "💤 无交易信号",
-                f"**时间**: {now.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                f"**BTC + ETH**: 本轮未检测到分型共振信号\n"
-                f"**状态**: 监控运行中",
-                color="blue",
-            )
+        feishu_send(
+            "💤 本轮无信号",
+            f"**时间**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"**BTC + ETH**: 未检测到分型共振信号\n"
+            f"**状态**: 监控运行正常 ✅",
+            color="blue",
+        )
 
     print("\n[Done]")
 
