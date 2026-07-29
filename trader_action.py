@@ -211,7 +211,8 @@ def detect_signal(name, m30_df, h1_df, cfg):
     entry = m30.loc[i, "close"]
     if dir_ == "long":
         sl = m30.loc[pivot, "low"] * (1 - SL_BUFFER)
-        risk = entry - sl; if risk <= 0: return None
+        risk = entry - sl
+        if risk <= 0: return None
         max_stop = cfg.get("max_stop_pct")
         if max_stop and risk > entry * max_stop:
             risk = entry * max_stop; sl = entry - risk
@@ -221,7 +222,8 @@ def detect_signal(name, m30_df, h1_df, cfg):
         tp = entry + RR * risk
     else:
         sl = m30.loc[pivot, "high"] * (1 + SL_BUFFER)
-        risk = sl - entry; if risk <= 0: return None
+        risk = sl - entry
+        if risk <= 0: return None
         max_stop = cfg.get("max_stop_pct")
         if max_stop and risk > entry * max_stop:
             risk = entry * max_stop; sl = entry + risk
