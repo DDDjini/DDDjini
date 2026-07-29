@@ -129,24 +129,27 @@ def run_once():
     ts = now.strftime('%m-%d %H:%M')
     print(f"[{ts}] 开始扫描...")
 
-    # ── 启动心跳（每次运行都发，证明 Actions 活着）──
-    feishu_send(
-        f"🟢 监控心跳 {ts}",
-        f"**BTC**: {ASSETS['BTC']}\n**ETH**: {ASSETS['ETH']}\n**频率**: 5min",
-        color="blue",
-    )
-
     # ── 初始化 ──
+    exchange = None
+    init_error = None
     try:
         exchange = ccxt.okx({"enableRateLimit": True, "timeout": 15000,
                              "options": {"defaultType": "swap"}})
     except Exception as e:
-        feishu_send("❌ ccxt 初始化失败", f"```{traceback.format_exc()[:500]}```", "red")
+        init_error = str(e)
+
+    if init_error:
+        feishu_send(
+            f"❌ ccxt 初始化失败 {ts}",
+            f"```{init_error[:300]}```",
+            color="red",
+        )
         return
 
     # ── 逐币种扫描 ──
     signals = []
     errors = []
+    prices = {}
 
     for name, symbol in ASSETS.items():
         print(f"\n── [{name}] ──")
@@ -154,6 +157,7 @@ def run_once():
             m30 = fetch_ohlcv(exchange, symbol, "30m", 100)
             h1 = fetch_ohlcv(exchange, symbol, "1h", 50)
             price = m30["close"].iloc[-1]
+            prices[name] = price
             print(f"  价格: {price:.2f} | 30m:{len(m30)}根 | 1h:{len(h1)}根")
 
             sig = check_signal(name, symbol, m30, h1)
@@ -167,7 +171,7 @@ def run_once():
             print(f"  ❌ {err}")
             errors.append(err)
 
-    # ── 飞书推送信号 ──
+    # ── 飞书推送：信号 ──
     if signals:
         for s in signals:
             emoji = "📈" if s["signal"]=="long" else "📉"
@@ -178,18 +182,30 @@ def run_once():
                 color="yellow",
             )
 
-    # ── 错误推送 ──
+    # ── 飞书推送：状态汇总（每轮都发，包含价格/信号/错误）──
+    price_lines = "\n".join(f"- **{k}**: {v:.2f}" for k, v in prices.items()) if prices else "- (无)"
+    sig_lines = "\n".join(f"- [{s['asset']}] {s['signal'].upper()} @ {s['entry_price']}" for s in signals) if signals else "- 无"
+    err_lines = "\n".join(f"- {e}" for e in errors) if errors else "- 无"
+
     if errors:
-        feishu_send(
-            "⚠️ 扫描异常",
-            f"**时间**: {ts}\n" + "\n".join(f"- {e}" for e in errors),
-            color="red",
-        )
+        color, status = "red", "⚠️ 部分币种拉取失败"
+    elif signals:
+        color, status = "yellow", f"🎯 发现 {len(signals)} 个信号"
+    else:
+        color, status = "blue", "✅ 监控正常"
+
+    feishu_send(
+        f"{status} {ts}",
+        f"**BTC价**: {prices.get('BTC', 'N/A')}\n"
+        f"**ETH价**: {prices.get('ETH', 'N/A')}\n\n"
+        f"**信号**:\n{sig_lines}\n\n"
+        f"**异常**:\n{err_lines}",
+        color=color,
+    )
 
     # ── 汇总 ──
-    summary = f"信号:{len(signals)} | 异常:{len(errors)}"
     print(f"\n{'='*50}")
-    print(f"扫描完成 ─ {summary}")
+    print(f"扫描完成 ─ 信号:{len(signals)} 异常:{len(errors)}")
     for s in signals:
         print(f"  [{s['asset']}] {s['signal'].upper()} @ {s['entry_price']}")
     print("[Done]")
