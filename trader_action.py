@@ -246,9 +246,18 @@ def run_once():
     print(f"[{ts}] 模拟盘交易扫描...")
 
     try:
+        return _run_inner(ts)
+    except Exception as e:
+        err = traceback.format_exc()
+        print(f"[严重错误]\n{err}")
+        feishu(f"❌ 脚本崩溃 {ts}", f"```{err[:800]}```", color="red")
+
+
+def _run_inner(ts):
+    try:
         trader = OKXTrader()
     except Exception as e:
-        feishu("❌ OKX 初始化失败", f"```{traceback.format_exc()[:300]}```", "red")
+        feishu("❌ OKX 初始化失败", f"```{traceback.format_exc()[:400]}```", "red")
         return
 
     equity = trader.balance()
