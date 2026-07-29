@@ -18,7 +18,10 @@ jobs:
           path: data/
           key: kline-data-v1-${{ github.ref_name }}
           restore-keys: kline-data-v1-
-      - name: Run scan
+      - name: Run trade scan
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        run: python monitor.py --once
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+        run: python trader_action.py --once
