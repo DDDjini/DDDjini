@@ -1,7 +1,7 @@
 name: OKX Monitor
 on:
   schedule:
-    - cron: "1,31 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 jobs:
   scan:
