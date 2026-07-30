@@ -1,10 +1,12 @@
-name: OKX Monitor
+name: OKX Trading (扫描+模拟盘下单)
+
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+
 jobs:
-  scan:
+  trade:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
