@@ -81,8 +81,13 @@ def add_fractals(df, left, right):
     high_shifts = [df["high"].shift(k) for k in range(-left, right + 1)]
     lm = pd.concat(low_shifts, axis=1)
     hm = pd.concat(high_shifts, axis=1)
-    df["fractal_low"] = (lm.idxmin(axis=1) == left) & df["low"].notna()
-    df["fractal_high"] = (hm.idxmax(axis=1) == left) & df["high"].notna()
+    # 使用 min/max + 唯一性判断（避开 idxmin 列名重复 bug）
+    min_low = lm.min(axis=1)
+    max_high = hm.max(axis=1)
+    count_low = (lm.values == df["low"].values[:, None]).sum(axis=1)
+    count_high = (hm.values == df["high"].values[:, None]).sum(axis=1)
+    df["fractal_low"] = (df["low"] == min_low) & (count_low == 1)
+    df["fractal_high"] = (df["high"] == max_high) & (count_high == 1)
     return df
 
 
