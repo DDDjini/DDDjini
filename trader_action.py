@@ -209,55 +209,70 @@ class OKXTrader:
 # ═══════════════════════════════════════════════════════════════
 
 def detect_signal(name, m30_df, h1_df, cfg):
+    """扫描最近N根K线，找最新已确认的分型共振信号"""
     n = len(m30_df)
     if n < LEFT + RIGHT + 2:
         return None
+
     m30 = add_fractals(m30_df.copy(), LEFT, RIGHT)
     h1 = add_fractals(h1_df.copy(), 2, 2)
-    i = n - 1; pivot = i - RIGHT
-    if pivot < 0:
-        return None
 
-    dir_ = None
-    if m30.loc[pivot, "fractal_low"]: dir_ = "long"
-    elif m30.loc[pivot, "fractal_high"]: dir_ = "short"
-    if dir_ is None: return None
+    # 从最新往前扫，取最近 3 根已确认的分型
+    for offset in range(0, 3):
+        i = n - 1 - offset
+        pivot = i - RIGHT
+        if pivot < 0:
+            continue
 
-    ts = m30.loc[pivot, "timestamp"]
-    sub = h1[h1["timestamp"] <= ts]
-    if len(sub) < 5: return None
-    if dir_ == "long" and not sub["fractal_low"].any(): return None
-    if dir_ == "short" and not sub["fractal_high"].any(): return None
+        dir_ = None
+        if m30.loc[pivot, "fractal_low"]:
+            dir_ = "long"
+        elif m30.loc[pivot, "fractal_high"]:
+            dir_ = "short"
+        if dir_ is None:
+            continue
 
-    entry = m30.loc[i, "close"]
-    if dir_ == "long":
-        sl = m30.loc[pivot, "low"] * (1 - SL_BUFFER)
-        risk = entry - sl
-        if risk <= 0: return None
-        max_stop = cfg.get("max_stop_pct")
-        if max_stop and risk > entry * max_stop:
-            risk = entry * max_stop; sl = entry - risk
-        max_pts = cfg.get("max_stop_pts")
-        if max_pts and risk > max_pts:
-            risk = max_pts; sl = entry - risk
-        tp = entry + RR * risk
-    else:
-        sl = m30.loc[pivot, "high"] * (1 + SL_BUFFER)
-        risk = sl - entry
-        if risk <= 0: return None
-        max_stop = cfg.get("max_stop_pct")
-        if max_stop and risk > entry * max_stop:
-            risk = entry * max_stop; sl = entry + risk
-        max_pts = cfg.get("max_stop_pts")
-        if max_pts and risk > max_pts:
-            risk = max_pts; sl = entry + risk
-        tp = entry - RR * risk
+        # 1h 共振
+        ts = m30.loc[pivot, "timestamp"]
+        sub = h1[h1["timestamp"] <= ts]
+        if len(sub) < 5:
+            continue
+        if dir_ == "long" and not sub["fractal_low"].any():
+            continue
+        if dir_ == "short" and not sub["fractal_high"].any():
+            continue
 
-    return {
-        "asset": name, "signal": dir_,
-        "entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2),
-        "time": str(m30.loc[i, "datetime"]),
-    }
+        entry = m30.loc[i, "close"]
+        if dir_ == "long":
+            sl = m30.loc[pivot, "low"] * (1 - SL_BUFFER)
+            risk = entry - sl
+            if risk <= 0: continue
+            max_stop = cfg.get("max_stop_pct")
+            if max_stop and risk > entry * max_stop:
+                risk = entry * max_stop; sl = entry - risk
+            max_pts = cfg.get("max_stop_pts")
+            if max_pts and risk > max_pts:
+                risk = max_pts; sl = entry - risk
+            tp = entry + RR * risk
+        else:
+            sl = m30.loc[pivot, "high"] * (1 + SL_BUFFER)
+            risk = sl - entry
+            if risk <= 0: continue
+            max_stop = cfg.get("max_stop_pct")
+            if max_stop and risk > entry * max_stop:
+                risk = entry * max_stop; sl = entry + risk
+            max_pts = cfg.get("max_stop_pts")
+            if max_pts and risk > max_pts:
+                risk = max_pts; sl = entry + risk
+            tp = entry - RR * risk
+
+        return {
+            "asset": name, "signal": dir_,
+            "entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2),
+            "time": str(m30.loc[i, "datetime"]),
+        }
+
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════
