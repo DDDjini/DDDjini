@@ -181,26 +181,45 @@ class OKXTrader:
         margin = equity * MARGIN_PCT
         notional = margin * LEVERAGE
         contracts = max(round(notional / (entry_price * ct_val), 2), min_qty)
+        inst_id = sym.replace("/", "-").replace(":", "-")
 
-        # OKX 模拟盘在 long/short 模式：必须显式传 posSide=long/short
-        params = {
+        # 直接调 OKX REST API，不经过 ccxt create_market_order（避开 posSide 自动逻辑）
+        body = {
+            "instId": inst_id,
             "tdMode": "cross",
+            "side": order_side,
             "posSide": pos_side,
+            "ordType": "market",
+            "sz": str(contracts),
             "attachAlgoOrds": [{
-                "tpTriggerPx": str(tp), "tpOrdPx": "-1",
-                "slTriggerPx": str(sl), "slOrdPx": "-1",
+                "tpTriggerPx": str(tp),
+                "tpOrdPx": "-1",
+                "slTriggerPx": str(sl),
+                "slOrdPx": "-1",
                 "sz": str(contracts),
                 "posSide": pos_side,
             }],
         }
-        print(f"  [{name}] 下单: {order_side} {contracts}张 posSide={pos_side}")
+        print(f"  [{name}] 直连下单: {order_side} {contracts}张 posSide={pos_side}")
         try:
-            order = self.exchange.create_market_order(sym, order_side, contracts, params)
-            print(f"  [{name}] ✅ 开仓成功 order_id={order.get('id','?')}")
+            order = self.exchange.private_post_trade_order(body)
+            print(f"  [{name}] ✅ 开仓成功 {order}")
             return contracts, margin
         except Exception as e:
-            print(f"  [{name}] ❌ 下单失败: {e}")
-            raise
+            # 备选：不带 posSide 重试
+            print(f"  [{name}] 第1次下单失败: {e}")
+            body2 = dict(body)
+            del body2["posSide"]
+            for ao in body2["attachAlgoOrds"]:
+                ao.pop("posSide", None)
+            print(f"  [{name}] 重试(无posSide): {order_side} {contracts}张")
+            try:
+                order = self.exchange.private_post_trade_order(body2)
+                print(f"  [{name}] ✅ 开仓成功 {order}")
+                return contracts, margin
+            except Exception as e2:
+                print(f"  [{name}] ❌ 重试也失败: {e2}")
+                raise e2
 
     def fetch_ohlcv(self, name, tf, limit=100):
         sym = ASSETS[name]["symbol"]
