@@ -190,9 +190,13 @@ class OKXTrader:
                 "sz": str(contracts), "posSide": pos_side,
             }],
         }
-        order = self.exchange.create_market_order(sym, order_side, contracts, params)
-        print(f"  [{name}] ✅ 开仓 {order_side} {contracts}张 @ {entry_price}")
-        return contracts, margin
+        try:
+            order = self.exchange.create_market_order(sym, order_side, contracts, params)
+            print(f"  [{name}] ✅ 开仓 {order_side} {contracts}张 @ {entry_price}")
+            return contracts, margin
+        except Exception as e:
+            print(f"  [{name}] ❌ 下单失败: {e}")
+            raise
 
     def fetch_ohlcv(self, name, tf, limit=100):
         sym = ASSETS[name]["symbol"]
@@ -334,11 +338,15 @@ def _run_inner(ts):
 
         print(f"  🔔 [{name}] {sig['signal'].upper()} @ {sig['entry']}")
         trader.set_leverage(name)
-        contracts, margin = trader.open(name, sig["signal"], sig["entry"],
-                                         sig["sl"], sig["tp"], equity)
-        signals_found.append(
-            f"  {sig['signal'].upper()} @{sig['entry']} | {contracts}张 | 保证金{margin:.2f}"
-        )
+        try:
+            contracts, margin = trader.open(name, sig["signal"], sig["entry"],
+                                             sig["sl"], sig["tp"], equity)
+            signals_found.append(
+                f"  {sig['signal'].upper()} @{sig['entry']} | {contracts}张 | 保证金{margin:.2f}"
+            )
+        except Exception as e:
+            # 单边下单失败不影响其他币种
+            feishu(f"⚠️ [{name}] 下单失败", f"**信号**: {sig['signal'].upper()} @{sig['entry']}\n**错误**: `{str(e)[:300]}`", color="red")
 
     # ── 飞书推送：每轮必发，带真实余额 ──
     sig_text = "\n".join(signals_found) if signals_found else "本轮无信号"
