@@ -265,55 +265,60 @@ def _run_inner(ts):
     equity = trader.balance()
     print(f"账户余额: {equity:.2f} USDT")
 
-    lines = [f"**余额**: {equity:.2f} USDT"]
+    # ── 先查两个持仓 ──
+    btc_pos = trader.position("BTC")
+    eth_pos = trader.position("ETH")
+
+    btc_line = f"持仓 {btc_pos['side']} {btc_pos['contracts']}张 @{btc_pos['entry']}" if btc_pos else "无持仓"
+    eth_line = f"持仓 {eth_pos['side']} {eth_pos['contracts']}张 @{eth_pos['entry']}" if eth_pos else "无持仓"
+
+    signals_found = []
 
     for name, cfg in ASSETS.items():
-        print(f"\n── [{name}] ──")
-
-        # 查持仓
+        # 有持仓就跳过
         pos = trader.position(name)
         if pos:
-            print(f"  已有持仓: {pos['side']} {pos['contracts']}张 @ {pos['entry']}")
-            lines.append(f"\n**{name}**: 持仓中 → {pos['side']} {pos['contracts']}张")
+            print(f"  [{name}] 持仓中，跳过")
             continue
 
-        # 拉K线
         try:
             m30 = trader.fetch_ohlcv(name, "30m", 100)
             h1 = trader.fetch_ohlcv(name, "1h", 50)
         except Exception as e:
-            print(f"  数据拉取失败: {e}")
-            lines.append(f"\n**{name}**: ❌ 拉取失败")
+            print(f"  [{name}] 数据拉取失败: {e}")
             continue
 
         price = m30["close"].iloc[-1]
-        print(f"  价格: {price:.2f}")
+        print(f"  [{name}] 价格: {price:.2f}")
 
-        # 检测信号
         sig = detect_signal(name, m30, h1, cfg)
         if not sig:
-            print(f"  无信号")
-            lines.append(f"\n**{name}**: 无信号 ({price:.2f})")
+            print(f"  [{name}] 无信号")
             continue
 
-        print(f"  🔔 {sig['signal'].upper()} @ {sig['entry']}")
-        print(f"     SL:{sig['sl']} TP:{sig['tp']}")
-
-        # 设置杠杆
+        print(f"  🔔 [{name}] {sig['signal'].upper()} @ {sig['entry']}")
         trader.set_leverage(name)
-
-        # 开仓
         contracts, margin = trader.open(name, sig["signal"], sig["entry"],
                                          sig["sl"], sig["tp"], equity)
-        lines.append(
-            f"\n**{name}**: 🔔 {sig['signal'].upper()} | 入场={sig['entry']} | "
-            f"止损={sig['sl']} | 止盈={sig['tp']} | {contracts}张 | 保证金={margin:.2f}"
+        signals_found.append(
+            f"  {sig['signal'].upper()} @{sig['entry']} | {contracts}张 | 保证金{margin:.2f}"
         )
 
-    # ── 飞书汇总 ──
-    feishu(f"📊 交易扫描 {ts}", "\n".join(lines), color="blue")
+    # ── 飞书推送：每轮必发，带真实余额 ──
+    sig_text = "\n".join(signals_found) if signals_found else "本轮无信号"
+    action = "🎯 已下单！" if signals_found else "👀 等待信号"
+
+    feishu(
+        f"{action} {ts}",
+        f"**✅ 已连接 OKX 模拟盘**\n"
+        f"**账户余额**: {equity:.2f} USDT\n\n"
+        f"**BTC**: {btc_line} | **ETH**: {eth_line}\n\n"
+        f"**本轮信号**:\n{sig_text}",
+        color="green" if signals_found else "blue",
+    )
 
     print(f"\n{'='*50}")
+    print(f"余额={equity:.2f} BTC={btc_line} ETH={eth_line} 信号={len(signals_found)}")
     print("[Done]")
 
 
