@@ -100,18 +100,29 @@ class OKXTrader:
         if not all([API_KEY, API_SECRET, PASSPHRASE]):
             raise RuntimeError("OKX API Key 未配置")
 
-        self.exchange = ccxt.okx({
+        cfg = {
             "apiKey": API_KEY, "secret": API_SECRET, "password": PASSPHRASE,
-            "enableRateLimit": True, "timeout": 15000,
+            "enableRateLimit": True, "timeout": 30000,  # 30s 超时
             "options": {"defaultType": "swap"},
-        })
-        self.exchange.set_sandbox_mode(True)  # 始终模拟盘
-        self.exchange.load_markets()
+        }
+        self.exchange = ccxt.okx(cfg)
+        self.exchange.set_sandbox_mode(True)
+
+        # 带重试的 load_markets
+        for attempt in range(3):
+            try:
+                self.exchange.load_markets()
+                break
+            except Exception as e:
+                print(f"  load_markets 第{attempt+1}次失败: {e}")
+                if attempt == 2:
+                    raise
+                import time; time.sleep(3)
 
         # 缓存合约信息
         self.contracts = {}
-        for name, cfg in ASSETS.items():
-            sym = cfg["symbol"]
+        for name, cfg_asset in ASSETS.items():
+            sym = cfg_asset["symbol"]
             mkt = self.exchange.market(sym)
             self.contracts[name] = {
                 "ct_val": float(mkt.get("contractSize", 1)),
@@ -119,13 +130,18 @@ class OKXTrader:
             }
 
     def balance(self):
-        try:
-            bal = self.exchange.fetch_balance()
-            usdt = bal.get("USDT", {})
-            return float(usdt.get("free", 0)) or float(usdt.get("total", 0))
-        except Exception as e:
-            print(f"  余额查询失败: {e}")
-            return 0
+        for attempt in range(2):
+            try:
+                bal = self.exchange.fetch_balance()
+                usdt = bal.get("USDT", {})
+                val = float(usdt.get("free", 0)) or float(usdt.get("total", 0))
+                if val > 0:
+                    return val
+            except Exception as e:
+                print(f"  余额查询第{attempt+1}次失败: {e}")
+                if attempt < 1:
+                    import time; time.sleep(2)
+        return 0
 
     def position(self, name):
         sym = ASSETS[name]["symbol"]
