@@ -181,7 +181,9 @@ class OKXTrader:
         margin = equity * MARGIN_PCT
         notional = margin * LEVERAGE
         contracts = max(round(notional / (entry_price * ct_val), 2), min_qty)
-        inst_id = sym.replace("/", "-").replace(":", "-")
+        # OKX 永续合约 instId 格式：BTC-USDT-SWAP（不是 BTC-USDT-USDT）
+        market = self.exchange.market(sym)
+        inst_id = market["id"]  # ccxt 自动给出正确的 instId
 
         # 直接调 OKX REST API，不经过 ccxt create_market_order（避开 posSide 自动逻辑）
         body = {
