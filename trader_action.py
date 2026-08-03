@@ -174,7 +174,6 @@ class OKXTrader:
         sym = ASSETS[name]["symbol"]
         ct_val = self.contracts[name]["ct_val"]
         min_qty = self.contracts[name]["min_qty"]
-        pos_side = "long" if signal == "long" else "short"
         order_side = "buy" if signal == "long" else "sell"
 
         # 动态仓位
@@ -182,12 +181,14 @@ class OKXTrader:
         notional = margin * LEVERAGE
         contracts = max(round(notional / (entry_price * ct_val), 2), min_qty)
 
+        # OKX 模拟盘默认是 net 模式，不传 posSide 避免 51000 错误
+        # 止损止盈算法单也对应同步
         params = {
-            "tdMode": "cross", "posSide": pos_side,
+            "tdMode": "cross",
             "attachAlgoOrds": [{
                 "tpTriggerPx": str(tp), "tpOrdPx": "-1",
                 "slTriggerPx": str(sl), "slOrdPx": "-1",
-                "sz": str(contracts), "posSide": pos_side,
+                "sz": str(contracts),
             }],
         }
         try:
