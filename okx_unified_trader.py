@@ -232,7 +232,7 @@ class UnifiedTrader:
     """统一交易机器人 ─ 始终连接 OKX 模拟盘，--trade 控制是否真实下单"""
 
     def __init__(self, timeframe="30m", higher_tf="1h",
-                 left=5, right=2, rr=2.0, sl_buffer=0.0005, fee_rate=0.0005,
+                 left=5, right=2, rr=1.0, sl_buffer=0.0005, fee_rate=0.0005,
                  margin_pct=0.05, leverage=100,
                  live_trade=False,
                  proxy="http://127.0.0.1:7897"):
@@ -638,7 +638,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OKX 统一交易机器人 - BTC+ETH 双币种")
     parser.add_argument("--trade", action="store_true",
                         help="模拟盘真实下单模式（设杠杆+开仓+平仓）")
-    parser.add_argument("--rr", type=float, default=2.0)
+    parser.add_argument("--rr", type=float, default=1.0)
     parser.add_argument("--margin", type=float, default=0.05)
     parser.add_argument("--leverage", type=int, default=100)
     parser.add_argument("--proxy", default="http://127.0.0.1:7897")
