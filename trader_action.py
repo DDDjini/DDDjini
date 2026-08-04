@@ -37,7 +37,7 @@ ASSETS = {
 }
 
 LEFT, RIGHT = 5, 2
-RR = 2.0
+RR = 1.0
 SL_BUFFER = 0.0005
 LEVERAGE = 100
 MARGIN_PCT = 0.05          # 5%
