@@ -161,7 +161,8 @@ class OKXTrader:
 
     def set_leverage(self, name):
         sym = ASSETS[name]["symbol"]
-        inst_id = sym.replace("/", "-").replace(":", "-")
+        market_data = self.exchange.market(sym)
+        inst_id = market_data["id"]  # BTC-USDT-SWAP
         try:
             self.exchange.set_leverage(LEVERAGE, sym,
                                        params={"instId": inst_id, "lever": str(LEVERAGE), "mgnMode": "cross"})
