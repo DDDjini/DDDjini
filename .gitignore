@@ -17,6 +17,15 @@ results/
 *.jsonl
 *.log
 
+# 交易状态（本地运行产物）
+trading_state.json
+live_trader_state.json
+
+# 真实行情数据（大文件，本地保留不上传）
+data/bt_*.csv
+data/strict_*.csv
+log133.zip
+
 # OS
 .DS_Store
 Thumbs.db
