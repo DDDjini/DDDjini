@@ -2,7 +2,7 @@
 OKX 实盘自动交易机器人（本地 VSCode 运行版）
 =============================================
 策略: 分型(5,2) + 1h宽松共振 + 4h严格共振 + RR=1:1 + 100x杠杆
-加仓: 首次开仓5%保证金，浮亏40%(入场到止损2/5处)时再加5%，总止损不变
+仓位: 头仓3%保证金，浮亏40%(入场到止损2/5处)时加仓4%，总止损不变
 调度: 每5分钟扫描一次，30分钟收盘节点执行完整信号检测
 风控: 分型去重 + 持仓检查
 通知: 飞书机器人实时推送
@@ -43,7 +43,8 @@ PASSPHRASE = os.getenv("OKX_PASSPHRASE", "")
 FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK", "")
 
 LEVERAGE = int(os.getenv("LEVERAGE", "100"))
-MARGIN_PCT = float(os.getenv("MARGIN_PCT", "0.05"))
+MARGIN_PCT = float(os.getenv("MARGIN_PCT", "0.03"))       # 头仓保证金 3%
+ADD_MARGIN_PCT = float(os.getenv("ADD_MARGIN_PCT", "0.04"))  # 加仓保证金 4%
 RR = float(os.getenv("RR", "1.0"))
 LEFT, RIGHT = int(os.getenv("LEFT", "5")), int(os.getenv("RIGHT", "2"))
 SL_BUFFER = float(os.getenv("SL_BUFFER", "0.0005"))
@@ -255,7 +256,7 @@ class OKXTrader:
                 pass
 
         # 判断是否已加仓：当前持仓张数 vs 首次开仓应有张数
-        # 首次开仓 = 5%保证金 × 100x / (入场价 × 合约面值)
+        # 首次开仓 = 3%保证金 × 100x / (入场价 × 合约面值)
         ct_val = cfg["ct_val"]
         entry = float(pos["entry"])
         current = float(pos["contracts"])
@@ -317,7 +318,7 @@ class OKXTrader:
         pos_side = signal  # "long" or "short"
         order_side = "buy" if signal == "long" else "sell"
 
-        # 动态仓位: 5% 保证金 × 100x 杠杆
+        # 动态仓位: 3% 保证金 × 100x 杠杆（头仓）
         margin = equity * MARGIN_PCT
         notional = margin * LEVERAGE
         contracts = max(round(notional / (entry_price * ct_val), 2), 1)
@@ -394,7 +395,7 @@ class OKXTrader:
     def add_to_position(self, name, signal, add_price, sl, new_tp, original_contracts, equity):
         """
         加仓 + 重挂统一止盈止损
-        - 市价加仓 5% 保证金（先加仓并验证成交）
+        - 市价加仓 4% 保证金（先加仓并验证成交）
         - 撤销原有 algo 单
         - 按加仓后平均成本重挂 TP/SL（SL不变）
         """
@@ -403,8 +404,8 @@ class OKXTrader:
         pos_side = signal
         order_side = "buy" if signal == "long" else "sell"
 
-        # 加仓 5% 保证金
-        margin = equity * MARGIN_PCT
+        # 加仓 4% 保证金
+        margin = equity * ADD_MARGIN_PCT
         notional = margin * LEVERAGE
         contracts = max(round(notional / (add_price * ct_val), 2), 1)
         total_contracts = original_contracts + contracts
@@ -834,7 +835,7 @@ def run_loop():
     print("=" * 60)
     print("  OKX 实盘交易机器人 启动")
     print("  策略: 分型(5,2) + 1h宽松共振 + 4h严格共振 + RR=1:1 + 100x杠杆")
-    print("  加仓: 浮亏40%(入场到止损2/5处)时加仓5%，总止损不变")
+    print("  仓位: 头仓3% + 浮亏40%加仓4%，总止损不变")
     print("  调度: 每5分钟扫描 | 30min收盘节点重点检测")
     print("  停止: Ctrl+C")
     print("=" * 60)
@@ -846,8 +847,8 @@ def run_loop():
     feishu(
         "🚀 交易机器人已上线",
         f"**策略**: 分型(5,2)+1h宽松共振+4h严格共振 RR=1:1\n"
-        f"**杠杆**: {LEVERAGE}x | 保证金: {MARGIN_PCT*100}%\n"
-        f"**加仓**: 浮亏40%(入场到止损2/5处)加仓5%\n"
+        f"**杠杆**: {LEVERAGE}x | 头仓: {MARGIN_PCT*100:.0f}% | 加仓: {ADD_MARGIN_PCT*100:.0f}%\n"
+        f"**加仓点**: 浮亏40%(入场到止损2/5处)\n"
         f"**扫描频率**: 每5分钟 | 30min收盘节点重点\n"
         f"**时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         color="turquoise",
