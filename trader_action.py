@@ -6,6 +6,7 @@ OKX 模拟盘自动交易（GitHub Actions 版）
 
 import ccxt
 import pandas as pd
+import numpy as np
 import os
 import sys
 import requests
@@ -40,7 +41,7 @@ LEFT, RIGHT = 5, 2
 RR = 1.0
 SL_BUFFER = 0.0005
 LEVERAGE = 100
-MARGIN_PCT = 0.05          # 5%
+MARGIN_PCT = 0.03          # 头仓 3%（与本地 live_trader.py 一致）
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -238,14 +239,24 @@ class OKXTrader:
 # 信号检测
 # ═══════════════════════════════════════════════════════════════
 
-def detect_signal(name, m30_df, h1_df, cfg):
-    """扫描最近N根K线，找最新已确认的分型共振信号"""
+def detect_signal(name, m30_df, h1_df, h4_df, cfg):
+    """扫描最近N根K线，找最新已确认的分型 + 1h宽松共振 + 4h严格共振 信号"""
     n = len(m30_df)
     if n < LEFT + RIGHT + 2:
         return None
 
     m30 = add_fractals(m30_df.copy(), LEFT, RIGHT)
     h1 = add_fractals(h1_df.copy(), 2, 2)
+
+    # 4h 分型事件（严格共振：最近一个分型方向必须匹配）
+    h4 = add_fractals(h4_df.copy(), 2, 2)
+    h4_mask = h4['fractal_low'].values | h4['fractal_high'].values
+    h4_ts = h4['timestamp'].values[h4_mask]
+    h4_typ = np.where(h4['fractal_low'].values[h4_mask], 'low', 'high')
+    if len(h4_ts) > 1:
+        order = np.argsort(h4_ts)
+        h4_ts = h4_ts[order]
+        h4_typ = h4_typ[order]
 
     # 从最新往前扫，取最近 3 根已确认的分型
     for offset in range(0, 3):
@@ -262,7 +273,7 @@ def detect_signal(name, m30_df, h1_df, cfg):
         if dir_ is None:
             continue
 
-        # 1h 共振
+        # 1h 宽松共振
         ts = m30.loc[pivot, "timestamp"]
         sub = h1[h1["timestamp"] <= ts]
         if len(sub) < 5:
@@ -270,6 +281,15 @@ def detect_signal(name, m30_df, h1_df, cfg):
         if dir_ == "long" and not sub["fractal_low"].any():
             continue
         if dir_ == "short" and not sub["fractal_high"].any():
+            continue
+
+        # 4h 严格共振（最近 4h 分型方向必须匹配）
+        idx4 = int(np.searchsorted(h4_ts, ts, side='right') - 1)
+        if idx4 < 0:
+            continue
+        if dir_ == "long" and h4_typ[idx4] != "low":
+            continue
+        if dir_ == "short" and h4_typ[idx4] != "high":
             continue
 
         entry = m30.loc[i, "close"]
@@ -350,6 +370,7 @@ def _run_inner(ts):
         try:
             m30 = trader.fetch_ohlcv(name, "30m", 100)
             h1 = trader.fetch_ohlcv(name, "1h", 50)
+            h4 = trader.fetch_ohlcv(name, "4h", 100)
         except Exception as e:
             print(f"  [{name}] 数据拉取失败: {e}")
             continue
@@ -357,7 +378,7 @@ def _run_inner(ts):
         price = m30["close"].iloc[-1]
         print(f"  [{name}] 价格: {price:.2f}")
 
-        sig = detect_signal(name, m30, h1, cfg)
+        sig = detect_signal(name, m30, h1, h4, cfg)
         if not sig:
             print(f"  [{name}] 无信号")
             continue
