@@ -58,6 +58,7 @@ ASSETS = {
         "instId": "BTC-USDT-SWAP",
         "max_stop_pct": 0.017,
         "ct_val": 0.01,  # 每张合约 0.01 BTC
+        "min_qty": 0.01,  # 最小下单量 0.01 张
         "add_frac": 0.40,  # 加仓点：浮亏40%（入场到止损走完2/5时加仓，回测最优）
     },
     "ETH": {
@@ -65,11 +66,21 @@ ASSETS = {
         "instId": "ETH-USDT-SWAP",
         "max_stop_pts": 50.0,
         "ct_val": 0.1,  # 每张合约 0.1 ETH
+        "min_qty": 0.1,  # 最小下单量 0.1 张
         "add_frac": 0.40,  # 加仓点：浮亏40%
     },
 }
 
 STATE_FILE = "trading_state.json"
+
+
+def round_qty(qty, min_qty):
+    """按最小下单量的精度四舍五入，并确保不小于最小下单量"""
+    decimals = 0
+    s = str(min_qty)
+    if "." in s:
+        decimals = len(s.split(".")[1])
+    return max(round(qty, decimals), min_qty)
 
 # ═══════════════════════════════════════════════
 # 飞书通知
@@ -235,9 +246,10 @@ class OKXTrader:
             return None
         cfg = ASSETS[name]
 
-        # 从挂单读取 TP/SL
+        # 从挂单读取 TP/SL 和挂单张数（挂单张数是精确值，比持仓推算可靠）
         sl = 0.0
         tp = 0.0
+        algo_sz = 0.0
         for ord_type in ["oco", "conditional", "move_order_stop"]:
             try:
                 pending = self.exchange.private_get_trade_orders_algo_pending({
@@ -248,23 +260,46 @@ class OKXTrader:
                 for item in data:
                     sl_v = float(item.get("slTriggerPx", 0) or 0)
                     tp_v = float(item.get("tpTriggerPx", 0) or 0)
+                    sz_v = float(item.get("sz", 0) or 0)
                     if sl_v > 0:
                         sl = sl_v
                     if tp_v > 0:
                         tp = tp_v
+                    if sz_v > 0:
+                        algo_sz = max(algo_sz, sz_v)
             except Exception:
                 pass
 
-        # 判断是否已加仓：当前持仓张数 vs 首次开仓应有张数
-        # 首次开仓 = 3%保证金 × 100x / (入场价 × 合约面值)
+        # 判断是否已加仓
         ct_val = cfg["ct_val"]
         entry = float(pos["entry"])
         current = float(pos["contracts"])
-        expected = equity * MARGIN_PCT * LEVERAGE / (entry * ct_val) if entry > 0 and equity > 0 else 0
-        added = (expected > 0) and (current > expected * 1.5)
+
+        # 头仓应有张数 = 3%保证金 × 100x / (入场价 × 合约面值)
+        expected_head = equity * MARGIN_PCT * LEVERAGE / (entry * ct_val) if entry > 0 and equity > 0 else 0
+
+        # 判断逻辑（关键：加仓后一定会重挂 oco 单，sz 更新为加仓后总张数）：
+        # 1. 挂单 sz ≈ 持仓（比率 0.9~1.1，状态干净）：
+        #    用挂单 sz 精确判断：> 2倍头仓 → 已加仓（挂单覆盖头仓+加仓）；否则未加仓
+        # 2. 挂单 sz 明显 > 持仓（部分平仓，挂单还是开仓残留）：
+        #    说明从未加仓过（加仓会重挂单，sz 会更新）→ 未加仓
+        # 3. 无挂单或其他异常：保守用持仓张数判断
+        if algo_sz > 0 and current > 0:
+            ratio = algo_sz / current
+            if 0.9 <= ratio <= 1.1:
+                # 状态干净：挂单覆盖全仓
+                added = (expected_head > 0) and (algo_sz > expected_head * 2.0)
+            elif ratio > 1.1:
+                # 挂单 > 持仓：部分平仓残留，从未加仓
+                added = False
+            else:
+                # 挂单 < 持仓：异常，保守视为已加仓
+                added = True
+        else:
+            added = (expected_head > 0) and (current > expected_head * 2.0)
 
         print(f"  [{name}] 重建状态: {pos['side']} {current}张 @{entry} SL={sl} TP={tp} "
-              f"预期首仓{expected:.2f}张 → {'已加仓' if added else '未加仓'}")
+              f"挂单{algo_sz}张 预期首仓{expected_head:.3f}张 → {'已加仓' if added else '未加仓'}")
 
         return {
             "direction": pos["side"],
@@ -321,7 +356,8 @@ class OKXTrader:
         # 动态仓位: 3% 保证金 × 100x 杠杆（头仓）
         margin = equity * MARGIN_PCT
         notional = margin * LEVERAGE
-        contracts = max(round(notional / (entry_price * ct_val), 2), 1)
+        min_qty = cfg.get("min_qty", 0.01)
+        contracts = round_qty(notional / (entry_price * ct_val), min_qty)
 
         body = {
             "instId": cfg["instId"],
@@ -407,7 +443,8 @@ class OKXTrader:
         # 加仓 4% 保证金
         margin = equity * ADD_MARGIN_PCT
         notional = margin * LEVERAGE
-        contracts = max(round(notional / (add_price * ct_val), 2), 1)
+        min_qty = cfg.get("min_qty", 0.01)
+        contracts = round_qty(notional / (add_price * ct_val), min_qty)
         total_contracts = original_contracts + contracts
 
         # 1. 市价加仓
