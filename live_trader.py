@@ -2,7 +2,7 @@
 OKX 实盘自动交易机器人（本地 VSCode 运行版）
 =============================================
 策略: 分型(5,2) + 1h宽松共振 + 4h严格共振 + RR=1:1 + 100x杠杆
-加仓: 首次开仓5%保证金，临近止损0.1%-0.15%时再加5%，总止损不变
+加仓: 首次开仓5%保证金，浮亏40%(入场到止损2/5处)时再加5%，总止损不变
 调度: 每5分钟扫描一次，30分钟收盘节点执行完整信号检测
 风控: 分型去重 + 持仓检查
 通知: 飞书机器人实时推送
@@ -57,14 +57,14 @@ ASSETS = {
         "instId": "BTC-USDT-SWAP",
         "max_stop_pct": 0.017,
         "ct_val": 0.01,  # 每张合约 0.01 BTC
-        "add_pct": 0.0015,  # 加仓触发距离止损 0.15%（回测最优）
+        "add_frac": 0.40,  # 加仓点：浮亏40%（入场到止损走完2/5时加仓，回测最优）
     },
     "ETH": {
         "symbol": "ETH/USDT:USDT",
         "instId": "ETH-USDT-SWAP",
         "max_stop_pts": 50.0,
         "ct_val": 0.1,  # 每张合约 0.1 ETH
-        "add_pct": 0.0010,  # 加仓触发距离止损 0.10%（回测最优）
+        "add_frac": 0.40,  # 加仓点：浮亏40%
     },
 }
 
@@ -630,7 +630,7 @@ def run_scan(state=None):
 
     for name, cfg in ASSETS.items():
         pos = trader.fetch_position(name)
-        add_pct = cfg.get("add_pct", 0.00125)
+        add_frac = cfg.get("add_frac", 0.40)
 
         if pos:
             # ── 已有持仓：检查是否需要加仓 ──
@@ -664,10 +664,11 @@ def run_scan(state=None):
             trigger = False
             add_price = 0.0
             if direction == "long" and sl > 0:
-                add_price = sl * (1 + add_pct)
+                # 浮亏 add_frac（40%）处加仓：加仓价 = 入场价 - add_frac × 风险区间
+                add_price = entry - add_frac * (entry - sl)
                 trigger = price > 0 and price <= add_price
             elif direction == "short" and sl > 0:
-                add_price = sl * (1 - add_pct)
+                add_price = entry + add_frac * (sl - entry)
                 trigger = price > 0 and price >= add_price
 
             if not trigger:
@@ -752,10 +753,15 @@ def run_scan(state=None):
                 "contracts": float(contracts),
             }
             signals.append(sig)
+            # 计算加仓触发价（浮亏 add_frac 处）用于展示
+            if sig["signal"] == "long":
+                add_trigger = sig["entry"] - add_frac * (sig["entry"] - sig["sl"])
+            else:
+                add_trigger = sig["entry"] + add_frac * (sig["sl"] - sig["entry"])
             details.append(
                 f"🔥 **{name} {sig['signal'].upper()}** @{sig['entry']:.2f}\n"
                 f"止损 {sig['sl']:.2f} | 止盈 {sig['tp']:.2f} | {contracts}张 | 保证金 {margin:.2f}\n"
-                f"加仓触发价 ≈ {sig['sl'] * (1 + add_pct):.2f}"
+                f"加仓触发价 ≈ {add_trigger:.2f}"
             )
 
             # 清理旧的分型记录（保留最近500个）
@@ -828,7 +834,7 @@ def run_loop():
     print("=" * 60)
     print("  OKX 实盘交易机器人 启动")
     print("  策略: 分型(5,2) + 1h宽松共振 + 4h严格共振 + RR=1:1 + 100x杠杆")
-    print("  加仓: 临近止损0.1%-0.15%时加仓5%，总止损不变")
+    print("  加仓: 浮亏40%(入场到止损2/5处)时加仓5%，总止损不变")
     print("  调度: 每5分钟扫描 | 30min收盘节点重点检测")
     print("  停止: Ctrl+C")
     print("=" * 60)
@@ -841,7 +847,7 @@ def run_loop():
         "🚀 交易机器人已上线",
         f"**策略**: 分型(5,2)+1h宽松共振+4h严格共振 RR=1:1\n"
         f"**杠杆**: {LEVERAGE}x | 保证金: {MARGIN_PCT*100}%\n"
-        f"**加仓**: 临近止损0.1%-0.15%加仓5%\n"
+        f"**加仓**: 浮亏40%(入场到止损2/5处)加仓5%\n"
         f"**扫描频率**: 每5分钟 | 30min收盘节点重点\n"
         f"**时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         color="turquoise",
